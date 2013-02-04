@@ -7,31 +7,34 @@ import Data.List (minimumBy, sortBy, genericLength)
 import Control.Monad ((=<<), liftM, liftM2)
 import Data.Maybe (fromJust)
 
-trace1 x = traceShow x x
-
 a0 = 0
-b0 = 10
+b0 = 14
  
-s = 2 -- some random value in [a,b]
 costConstant = 1
+
+constantCost = const costConstant
+linearCost x = (x + 1) * costConstant
+quadraticCost x = (linearCost x) * (linearCost x)
 
 cost = linearCost
 
-test1 = head $ (sortByAverageCost constantCost) . map fromJust $ (makeTrees 0 5)
-test2 = head $ (sortByAverageCost linearCost) . map fromJust $ (makeTrees 0 5)
-test3 = head $ (sortByAverageDepth) . map fromJust $ (makeTrees 0 5)
+testTrees = makeTrees a0 $! b0
+test1 = head $ (sortByAverageCost constantCost) . map fromJust $ testTrees 
+test2 = head $ (sortByAverageCost linearCost) . map fromJust $ testTrees
+test3 = head $ (sortByAverageCost quadraticCost) . map fromJust $ testTrees
+--test4 = head $ (sortByAverageDepth) . map fromJust $ testTrees
 
-main = do
-  putStr $ tree2dot test3
-  -- putStr "/* */"
-  -- putStr $ tree2dot test2
+printGraph x label = do
+  putStr "digraph G {\n"
+  putStr $ tree2dot x 
+  putStr $ "labelloc=\"t\";label=\"" ++ label ++ "\";"
+  putStr "}\n"
   
---   print $ searchRange (a0,b0) 0 []
+main = do
+  printGraph test1 "Constant cost"
+  printGraph test2 "Linear cost"
+  printGraph test3 "Quadratic cost"
 
-
-test x = x >= s
-
---allPairs :: [a] -> [b] -> [(a,b)]
 allPairs :: Monad m => m a -> m b -> m (a,b)
 allPairs = (=<<) . flip (liftM . flip (,))
 
@@ -79,21 +82,20 @@ sortByAverageDepth = sortWith averageDepth
 sortByAverageCost f = sortWith (averageCost f)
 
 
-constantCost = const costConstant
-linearCost x = (x + 1) * costConstant
 
+quote s = "\"" ++ s ++ "\""
 
-nodeLabel (Leaf x) = show x
-nodeLabel (Node x _ _) = show x
+nodeLabel (Leaf x) = quote . show $ x
+nodeLabel (Node (a,b,c) _ _) = quote $ show (floor b) ++ " ?"
 
-nodeLabel' :: Show a => Maybe (Tree a) -> String 
+nodeLabel' :: (Show a, RealFrac a) => Maybe (Tree a) -> String 
 nodeLabel' Nothing = "bad"
 nodeLabel' (Just x) = nodeLabel x
 
 tree2dot t@(Leaf _) = nodeLabel t ++ ";\n"
 tree2dot t@(Node _ l r) = nodeLabel t ++ " -> " ++ nodeLabel' l ++ ";\n" ++ nodeLabel t ++ " -> " ++ nodeLabel' r ++ ";\n" ++ tree2dot' l ++ tree2dot' r 
 
-tree2dot' :: Show a => Maybe (Tree a) -> String 
+tree2dot' :: (Show a, RealFrac a) => Maybe (Tree a) -> String 
 tree2dot' t@Nothing = nodeLabel' t
 tree2dot' (Just x) = tree2dot x
   
