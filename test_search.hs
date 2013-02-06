@@ -49,7 +49,7 @@ data Tree a = Leaf { getValue :: a } | Node { getRange :: (a,a,a),
                                               getRight :: Tree a }
             deriving (Show)
 
---makeTrees :: (Enum a, Eq a, Num a) => (a -> a -> Maybe (Tree a)
+makeTrees :: (Enum t, Eq t, Fractional a, Num t, Ord a) => (t -> a) -> t -> t -> Tree t
 makeTrees cost a b = if a == b 
                      then Leaf a
                      else head . (sortByAverageCost cost) $ map makeTree' [a..(b-1)]
@@ -61,6 +61,16 @@ makeTrees cost a b = if a == b
                 rightTree = makeTrees cost (x+1) b
                 
                 
+averageCost :: Fractional b => (t -> b) -> Tree t -> b
+averageCost f tree = sum d / genericLength d
+  where d = costs f tree
+        
+sortWith :: Ord a1 => (a -> a1) -> [a] -> [a]
+sortWith f = sortBy $ \a b -> compare (f a) (f b)
+
+sortByAverageCost :: (Fractional a, Ord a) => (t -> a) -> [Tree t] -> [Tree t]
+sortByAverageCost f = sortWith $ averageCost f
+
 depth :: (Num b, Ord b) => Tree t -> b
 depth (Leaf _) = 1 
 depth (Node _ l r) = 1 + max (depth l) (depth r)
@@ -78,13 +88,7 @@ costs f t@(Node (_,x,_) l r) = addCost l ++ addCost r
 averageDepth tree = sum d / genericLength d
   where d = depths tree
 
-averageCost f tree = sum d / genericLength d
-  where d = costs f tree
-
-sortWith f = sortBy (\a b -> (compare (f a) (f b)))
-
 sortByAverageDepth = sortWith averageDepth
-sortByAverageCost f = sortWith (averageCost f)
 
 
 
