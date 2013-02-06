@@ -7,9 +7,12 @@ import Data.List (minimumBy, sortBy, genericLength)
 import Control.Monad ((=<<), liftM, liftM2)
 import Data.Maybe (fromJust, isJust)
 import System.IO (hPutStrLn, stderr)
+import Control.Parallel (par, pseq)
+import Control.DeepSeq (NFData, rnf)
+import Control.Parallel.Strategies (parMap, rdeepseq)
 
-a0 = 0
-b0 = 31
+a0 = 0 :: Double
+b0 = 16 :: Double
  
 costConstant = 1000
 
@@ -48,17 +51,24 @@ data Tree a = Leaf { getValue :: a } | Node { getRange :: (a,a,a),
                                               getLeft :: Tree a, 
                                               getRight :: Tree a }
             deriving (Show)
+                     
+instance NFData a => NFData (Tree a) where
+  rnf (Leaf x) = rnf x
+  rnf (Node rng l r) = rnf rng `seq` rnf l `seq` rnf r
 
-makeTrees :: (Enum t, Eq t, Fractional a, Num t, Ord a) => (t -> a) -> t -> t -> Tree t
+makeTrees :: (NFData t, Ord t, Enum t, Eq t, Fractional a, Num t, Ord a) => (t -> a) -> t -> t -> Tree t
 makeTrees cost a b = if a == b 
                      then Leaf a
-                     else head . (sortByAverageCost cost) $ map makeTree' [a..(b-1)]
+                     else head . (sortByAverageCost cost) $ map' makeTree' [a..(b-1)]
   where makeTree' x = uncurry (Node (a,x,b))
                       $ if (x == a) 
                         then (Leaf a, rightTree)
-                        else (leftTree, rightTree)
+                        else (rightTree, leftTree)
           where leftTree = makeTrees cost a x
                 rightTree = makeTrees cost (x+1) b
+        map' = if (b - a) > 5 -- use parallel map only for larger trees
+               then parMap rdeepseq
+               else map
                 
                 
 averageCost :: Fractional b => (t -> b) -> Tree t -> b
@@ -70,6 +80,7 @@ sortWith f = sortBy $ \a b -> compare (f a) (f b)
 
 sortByAverageCost :: (Fractional a, Ord a) => (t -> a) -> [Tree t] -> [Tree t]
 sortByAverageCost f = sortWith $ averageCost f
+
 
 depth :: (Num b, Ord b) => Tree t -> b
 depth (Leaf _) = 1 
@@ -102,7 +113,14 @@ nodeLabel' Nothing = "bad"
 nodeLabel' (Just x) = nodeLabel x
 
 tree2dot t@(Leaf _) = nodeLabel t ++ ";\n"
-tree2dot t@(Node _ l r) = nodeLabel t ++ " -> " ++ nodeLabel l ++ ";\n" ++ nodeLabel t ++ " -> " ++ nodeLabel r ++ ";\n" ++ tree2dot l ++ tree2dot r 
+tree2dot t@(Node _ l r) = nodeLabel t ++ " -> " ++ nodeLabel l' ++ ";\n" ++ nodeLabel t ++ " -> " ++ nodeLabel r' ++ ";\n" ++ tree2dot l' ++ tree2dot r' 
+  where orderNodes a'@(Leaf a) b'@(Leaf b) = orderByLabels a b a' b'
+        orderNodes a'@(Leaf a) b'@(Node (_, b, _) _ _) = orderByLabels a b a' b'
+        orderNodes a'@(Node (_, a, _) _ _) b'@(Node (_, b, _) _ _) = orderByLabels a b a' b'
+        orderNodes a'@(Node (_, a, _) _ _) b'@(Leaf b) = orderByLabels a b a' b'
+        orderByLabels a b a' b' = if a <= b then (a', b') else (b', a')
+        l' = fst $ orderNodes l r
+        r' = snd $ orderNodes l r
 
 tree2dot' :: (Show a, RealFrac a) => Maybe (Tree a) -> String 
 tree2dot' t@Nothing = nodeLabel' t
