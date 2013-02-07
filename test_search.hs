@@ -13,10 +13,10 @@ a0 :: Double
 a0 = 0
 
 b0 :: Double
-b0 = 16
+b0 = 15
  
 costConstant :: Double
-costConstant = 1000
+costConstant = 100
 
 constantCost :: a -> Double
 constantCost = const costConstant
@@ -26,6 +26,12 @@ linearCost x = (x + 1) * costConstant
 
 quadraticCost :: Double -> Double
 quadraticCost x = (linearCost x) * (linearCost x)
+
+reverseLinearCost :: Double -> Double
+reverseLinearCost = (((b0 - a0) * costConstant) -) . linearCost
+
+eggsCost :: Double -> Double
+eggsCost x = if x < a0 + (b0 - a0) / 2 then 0 else 1
 
 printGraph :: (Fractional a, Ord a, Show a) => (Double -> a) -> String -> IO ()
 printGraph cost label = do
@@ -45,7 +51,9 @@ main = do
   mapM_ (uncurry printGraph) [
     (constantCost, "Constant cost"),
     (linearCost, "Linear cost"),
-    (quadraticCost, "Quadratic cost")]
+    (quadraticCost, "Quadratic cost"),
+    (reverseLinearCost, "Reverse linear cost"),
+    (eggsCost, "Eggs cost")]
   return ()
 
 allPairs :: Monad m => m a -> m b -> m (a,b)
@@ -76,8 +84,8 @@ makeTrees cost a b = if a == b
                 
                 
 averageCost :: Fractional b => (t -> b) -> Tree t -> b
-averageCost f tree = sum d / genericLength d
-  where d = costs f tree
+averageCost cost tree = sum d / genericLength d
+  where d = calcCosts cost tree
         
 sortWith :: Ord a1 => (a -> a1) -> [a] -> [a]
 sortWith f = sortBy $ \a b -> compare (f a) (f b)
@@ -95,10 +103,11 @@ depths (Leaf _) = [1]
 depths (Node _ l r) = addDepth l ++ addDepth r
   where addDepth x = map (+1) (depths x) 
 
-costs :: Num b => (t -> b) -> Tree t -> [b]
-costs f (Leaf x) = [f x] 
-costs f (Node (_,x,_) l r) = addCost l ++ addCost r
-  where addCost y = map (+(f x)) ((costs f) y) 
+-- given a cost function and a tree, returns a list of the costs of all nodes in the tree
+calcCosts :: Num b => (t -> b) -> Tree t -> [b]
+calcCosts cost (Leaf x) = [0] 
+calcCosts cost (Node (_,x,_) l r) = addCost l ++ addCost r
+  where addCost y = map (+(cost x)) (calcCosts cost y) 
 
 
 averageDepth :: Fractional a => Tree t -> a
