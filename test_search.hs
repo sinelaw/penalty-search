@@ -2,47 +2,51 @@
 module Main where
 
 
-import Debug.Trace (traceShow)
-import Data.List (minimumBy, sortBy, genericLength)
-import Control.Monad ((=<<), liftM, liftM2)
-import Data.Maybe (fromJust, isJust)
+--import Debug.Trace (traceShow)
+import Data.List (sortBy, genericLength, intersperse)
+import Control.Monad (liftM)
 import System.IO (hPutStrLn, stderr)
-import Control.Parallel (par, pseq)
 import Control.DeepSeq (NFData, rnf)
 import Control.Parallel.Strategies (parMap, rdeepseq)
 
-a0 = 0 :: Double
-b0 = 16 :: Double
+a0 :: Double
+a0 = 0
+
+b0 :: Double
+b0 = 16
  
+costConstant :: Double
 costConstant = 1000
 
+constantCost :: a -> Double
 constantCost = const costConstant
+
+linearCost :: Double -> Double
 linearCost x = (x + 1) * costConstant
+
+quadraticCost :: Double -> Double
 quadraticCost x = (linearCost x) * (linearCost x)
 
-cost = linearCost
-
---testTrees = makeTrees a0 $! b0
--- test1 = head $ (sortByAverageCost constantCost) . map fromJust $ testTrees 
--- test2 = head $ (sortByAverageCost linearCost) . map fromJust $ testTrees
--- test3 = head $ (sortByAverageCost quadraticCost) . map fromJust $ testTrees
---test4 = head $ (sortByAverageDepth) . map fromJust $ testTrees
-test1 = makeTrees constantCost a0 b0
-test2 = makeTrees linearCost a0 b0
-test3 = makeTrees quadraticCost a0 b0
-  
-printGraph x label = do
-  let rangeStr = "[" ++ show a0 ++ ", " ++ show b0 ++ "]"
-  hPutStrLn stderr $ "solving: " ++ label ++ " - " ++ rangeStr
+printGraph :: (Fractional a, Ord a, Show a) => (Double -> a) -> String -> IO ()
+printGraph cost label = do
+  let x = makeTrees cost a0 b0 
+      rangeStr = spaceConcat ["[", show a0, ",", show b0, "]"]
+      
+  hPutStrLn stderr $ spaceConcat ["solving:", label, rangeStr]
+  let avgCost = averageCost cost x
+      labelStr = spaceConcat [label, rangeStr, "(expected cost =", show avgCost, ")"]
   putStr "digraph G {\n"
   putStr $ tree2dot x 
-  putStr $ "labelloc=\"t\";label=\"" ++ label ++ " - " ++ rangeStr ++ "\";"
+  putStr $ concat ["labelloc=\"t\";label=\"", labelStr, "\""]
   putStr "}\n"
   
+main :: IO ()
 main = do
-  printGraph test1 "Constant cost"
-  printGraph test2 "Linear cost"
-  printGraph test3 "Quadratic cost"
+  mapM_ (uncurry printGraph) [
+    (constantCost, "Constant cost"),
+    (linearCost, "Linear cost"),
+    (quadraticCost, "Quadratic cost")]
+  return ()
 
 allPairs :: Monad m => m a -> m b -> m (a,b)
 allPairs = (=<<) . flip (liftM . flip (,))
@@ -86,32 +90,35 @@ depth :: (Num b, Ord b) => Tree t -> b
 depth (Leaf _) = 1 
 depth (Node _ l r) = 1 + max (depth l) (depth r)
                      
---depths :: (Num b, Ord b, Fractional b) => Tree t -> b
+depths :: Num b => Tree t -> [b]
 depths (Leaf _) = [1] 
 depths (Node _ l r) = addDepth l ++ addDepth r
   where addDepth x = map (+1) (depths x) 
 
-costs f t@(Leaf x) = [f x] 
-costs f t@(Node (_,x,_) l r) = addCost l ++ addCost r
+costs :: Num b => (t -> b) -> Tree t -> [b]
+costs f (Leaf x) = [f x] 
+costs f (Node (_,x,_) l r) = addCost l ++ addCost r
   where addCost y = map (+(f x)) ((costs f) y) 
 
 
+averageDepth :: Fractional a => Tree t -> a
 averageDepth tree = sum d / genericLength d
   where d = depths tree
 
+sortByAverageDepth :: [Tree t] -> [Tree t]
 sortByAverageDepth = sortWith averageDepth
 
+spaceConcat :: [String] -> String
+spaceConcat strs = concat $ intersperse " " strs
 
-
+quote :: String -> String
 quote s = "\"" ++ s ++ "\""
 
+nodeLabel :: (RealFrac a, Show a) => Tree a -> String
 nodeLabel (Leaf x) = quote . show $ x
-nodeLabel (Node (a,b,c) _ _) = quote $ show (floor b) ++ " ?"
+nodeLabel (Node (_,x,_) _ _) = quote $ show (floor x) ++ " ?"
 
-nodeLabel' :: (Show a, RealFrac a) => Maybe (Tree a) -> String 
-nodeLabel' Nothing = "bad"
-nodeLabel' (Just x) = nodeLabel x
-
+tree2dot :: (RealFrac a, Show a) => Tree a -> [Char]
 tree2dot t@(Leaf _) = nodeLabel t ++ ";\n"
 tree2dot t@(Node _ l r) = nodeLabel t ++ " -> " ++ nodeLabel l' ++ ";\n" ++ nodeLabel t ++ " -> " ++ nodeLabel r' ++ ";\n" ++ tree2dot l' ++ tree2dot r' 
   where orderNodes a'@(Leaf a) b'@(Leaf b) = orderByLabels a b a' b'
@@ -121,30 +128,4 @@ tree2dot t@(Node _ l r) = nodeLabel t ++ " -> " ++ nodeLabel l' ++ ";\n" ++ node
         orderByLabels a b a' b' = if a <= b then (a', b') else (b', a')
         l' = fst $ orderNodes l r
         r' = snd $ orderNodes l r
-
-tree2dot' :: (Show a, RealFrac a) => Maybe (Tree a) -> String 
-tree2dot' t@Nothing = nodeLabel' t
-tree2dot' (Just x) = tree2dot x
-  
-
-
-
--- nextRange (a,b) curX = 
---   if a == b
---   then Nothing
---   else case test curX of
---     False -> if curX == b then Just (b,b) else Just (curX+1, b)
---     True  -> if curX == a then Just (a,a) else Just (a, curX-1)
-  
--- searchRange (a,b) curCost path =
---   minimumBy (\(cost1, _) (cost2, _) -> compare cost1 cost2) 
---   $ ranges
---   where
---     ranges = foldr searchRange' [] [a..b]
---     searchRange' x prevXs = case nextRange' of
---       Nothing    -> (curCost, nextPath) : prevXs
---       Just rng   -> (searchRange rng nextCost nextPath) : prevXs
---       where nextRange' = nextRange (a,b) x
---             nextCost = cost x + curCost
---             nextPath = (x, (a,b)) : path
 
